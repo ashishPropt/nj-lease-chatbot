@@ -58,6 +58,7 @@ async function extractBlankFields(buffer) {
       const y = item.transform[5];
       if (y < MARGIN || y > pageHeight - MARGIN) continue;
       if (x < 30 && /^\d{1,3}$/.test(str.trim())) continue; // left-margin line numbers
+      if (str.trim() === "q") continue; // Wingdings checkbox glyph rendered as "q"
       const width = item.width || 0;
       const len = str.length || 1;
 
@@ -132,7 +133,9 @@ async function extractBlankFields(buffer) {
   // both spots with the same answer.
   let lastReal = null;
   for (const f of fields) {
-    const isBlankOnly = f.context.replace(/_/g, "").trim() === "";
+    // Treat as "no useful context" if the line has fewer than 3 letters
+    // once blanks/punctuation are stripped (e.g. "____ ...." or "on ____ .").
+    const isBlankOnly = f.context.replace(/[^A-Za-z]/g, "").length < 3;
     if (isBlankOnly && lastReal) {
       f.linkedTo = lastReal.id;
       f.context = lastReal.context;

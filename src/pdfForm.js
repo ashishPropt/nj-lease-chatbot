@@ -17,16 +17,14 @@ function cleanLabel(text) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// Build a short human question from the words immediately surrounding a blank.
+// Build a short, natural question from the words immediately surrounding a
+// blank, without just echoing the whole line back at the user.
 function buildQuestion(before, after) {
-  const b = cleanLabel(before).slice(-120);
-  const a = cleanLabel(after).slice(0, 60);
-  if (b) {
-    return `What value goes here: "...${b} ____${a ? " " + a + "..." : ""}"?`;
-  }
-  if (a) {
-    return `What value goes here: "____ ${a}..."?`;
-  }
+  const b = cleanLabel(before).slice(-80).replace(/^[\s,.;:()]+|[\s,.;:]+$/g, "");
+  const a = cleanLabel(after).slice(0, 60).replace(/^[\s,.;:]+|[\s,.;:()]+$/g, "");
+
+  if (b) return `What is "${b}"?`;
+  if (a) return `What value goes before "${a}"?`;
   return "What value goes here?";
 }
 
@@ -101,14 +99,20 @@ async function extractBlankFields(buffer) {
       const lineTokens = group.items.sort((a, b) => a.x - b.x);
       const lineText = lineTokens.map((t) => (t.type === "text" ? t.text : "____")).join("");
 
+      const blankIdxs = lineTokens.map((t, i) => (t.type === "blank" ? i : -1)).filter((i) => i >= 0);
+
       lineTokens.forEach((tok, idx) => {
         if (tok.type !== "blank") return;
+        const priorBlanks = blankIdxs.filter((i) => i < idx);
+        const prevBlank = priorBlanks.length ? Math.max(...priorBlanks) : -1;
+        const laterBlanks = blankIdxs.filter((i) => i > idx);
+        const nextBlank = laterBlanks.length ? Math.min(...laterBlanks) : lineTokens.length;
         const before = lineTokens
-          .slice(0, idx)
+          .slice(prevBlank + 1, idx)
           .map((t) => (t.type === "text" ? t.text : "____"))
           .join("");
         const after = lineTokens
-          .slice(idx + 1)
+          .slice(idx + 1, nextBlank)
           .map((t) => (t.type === "text" ? t.text : "____"))
           .join("");
 

@@ -21,6 +21,13 @@
   #download-link { display: none; margin: 12px; text-align: center; }
   #download-link a { display: inline-block; padding: 10px 20px; background: #34a853; color: white; text-decoration: none; border-radius: 4px; }
   .session-id { font-size: 11px; color: #999; margin-top: 4px; word-break: break-all; }
+  #summary { padding: 12px 16px; }
+  #summary table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #summary th, #summary td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  #summary th { background: #f0f2f5; width: 30%; }
+  #summary input { width: 100%; box-sizing: border-box; padding: 4px; font-size: 13px; border: 1px solid #ccc; border-radius: 3px; }
+  #summary .save-btn { font-size: 11px; padding: 3px 8px; margin-left: 4px; }
+  #confirm-btn { display: block; margin: 12px auto; padding: 10px 24px; font-size: 14px; border: none; background: #34a853; color: white; border-radius: 4px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -31,6 +38,7 @@
     <div class="session-id" id="session-id"></div>
   </header>
   <div id="chat"></div>
+  <div id="summary" style="display:none"></div>
   <div id="download-link"><a id="download-anchor" download>Download Filled Lease (PDF)</a></div>
   <form id="form">
     <input type="text" id="answer" autocomplete="off" placeholder="Type your answer..." />
@@ -45,6 +53,7 @@ const progress = document.getElementById('progress');
 const downloadLink = document.getElementById('download-link');
 const downloadAnchor = document.getElementById('download-anchor');
 const sessionIdEl = document.getElementById('session-id');
+const summaryEl = document.getElementById('summary');
 
 let sessionId = null;
 
@@ -64,10 +73,74 @@ function addMsg(text, who, section) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+function renderSummary(summary) {
+  summaryEl.style.display = 'block';
+  summaryEl.innerHTML = '';
+  const table = document.createElement('table');
+  summary.forEach((item) => {
+    const tr = document.createElement('tr');
+
+    const th = document.createElement('th');
+    th.textContent = item.section + ' — ' + item.question;
+    tr.appendChild(th);
+
+    const td = document.createElement('td');
+    const valInput = document.createElement('input');
+    valInput.type = 'text';
+    valInput.value = item.answer;
+    td.appendChild(valInput);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'save-btn';
+    saveBtn.textContent = 'Update';
+    saveBtn.addEventListener('click', async () => {
+      const res = await fetch('/api/sessions/' + sessionId + '/confirm', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({fieldId: item.fieldId, answer: valInput.value})
+      });
+      handleResponse(await res.json());
+    });
+    td.appendChild(saveBtn);
+
+    tr.appendChild(td);
+    table.appendChild(tr);
+  });
+  summaryEl.appendChild(table);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.id = 'confirm-btn';
+  confirmBtn.textContent = 'Confirm and generate PDF';
+  confirmBtn.addEventListener('click', async () => {
+    const res = await fetch('/api/sessions/' + sessionId + '/confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true})
+    });
+    handleResponse(await res.json());
+  });
+  summaryEl.appendChild(confirmBtn);
+}
+
 function handleResponse(data) {
   sessionId = data.sessionId;
   sessionIdEl.textContent = 'Session: ' + sessionId;
+
+  if (data.needsConfirmation) {
+    if (!chat.dataset.reviewShown) {
+      addMsg(data.message, 'bot');
+      chat.dataset.reviewShown = '1';
+    }
+    progress.textContent = 'Review your answers';
+    input.style.display = 'none';
+    form.querySelector('button').style.display = 'none';
+    renderSummary(data.summary);
+    return;
+  }
+
   if (data.done) {
+    summaryEl.style.display = 'none';
     addMsg(data.message, 'bot');
     progress.textContent = 'Complete!';
     downloadAnchor.href = '/api/sessions/' + sessionId + '/pdf';

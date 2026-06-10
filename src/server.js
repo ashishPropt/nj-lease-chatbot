@@ -21,10 +21,31 @@ function cleanupSessions() {
 }
 setInterval(cleanupSessions, 1000 * 60 * 10).unref();
 
+function buildSummary(session) {
+  return questions.map((q) => ({
+    fieldId: q.id,
+    section: q.section,
+    question: q.question,
+    answer: session.answers[q.id] || "",
+  }));
+}
+
 function buildMessage(session) {
   const idx = session.index;
   if (idx >= questions.length) {
-    return { sessionId: session.id, done: true, message: "That's everything! Call GET /api/sessions/:id/pdf to retrieve the filled lease document." };
+    if (!session.confirmed) {
+      return {
+        sessionId: session.id,
+        done: false,
+        needsConfirmation: true,
+        message:
+          "That's everything! Please review your answers below. " +
+          'If everything looks correct, POST to /api/sessions/:id/confirm with {"confirm": true} to generate the PDF. ' +
+          'To change an answer first, POST {"fieldId": "...", "answer": "..."}.',
+        summary: buildSummary(session),
+      };
+    }
+    return { sessionId: session.id, done: true, message: "Confirmed! Call GET /api/sessions/:id/pdf to retrieve the filled lease document." };
   }
   const q = questions[idx];
   const suggestion = getSuggestion(q.id, session.answers);
@@ -87,6 +108,28 @@ app.post("/api/sessions/:id/answer", (req, res) => {
   res.json(buildMessage(session));
 });
 
+// Review/confirm step: edit an answer, or confirm to allow PDF generation
+app.post("/api/sessions/:id/confirm", (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.index < questions.length) {
+    return res.status(400).json({ error: "All questions must be answered before confirming" });
+  }
+
+  const { confirm, fieldId, answer } = req.body || {};
+
+  if (fieldId !== undefined) {
+    const valid = questions.find((q) => q.id === fieldId);
+    if (!valid) return res.status(400).json({ error: `Unknown fieldId: ${fieldId}` });
+    session.answers[fieldId] = answer != null ? String(answer).trim() : "";
+    session.confirmed = false;
+  } else if (confirm) {
+    session.confirmed = true;
+  }
+
+  res.json(buildMessage(session));
+});
+
 // Retrieve all collected answers as JSON
 app.get("/api/sessions/:id/answers", (req, res) => {
   const session = sessions.get(req.params.id);
@@ -98,6 +141,9 @@ app.get("/api/sessions/:id/answers", (req, res) => {
 app.get("/api/sessions/:id/pdf", async (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.index < questions.length || !session.confirmed) {
+    return res.status(400).json({ error: "Session not yet confirmed. POST to /api/sessions/:id/confirm first." });
+  }
 
   try {
     const pdfBuffer = await generateLeasePdf(questions, session.answers);

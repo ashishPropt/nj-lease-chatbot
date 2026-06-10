@@ -1,38 +1,46 @@
 const express = require("express");
 const path = require("path");
+const multer = require("multer");
 const { randomUUID } = require("crypto");
-const questions = require("./questions.json");
-const { generateLeasePdf } = require("./pdfFiller");
+const { analyzePdf } = require("./pdfForm");
+const { fillPdf } = require("./pdfFiller");
 const { getSuggestion } = require("./autofill");
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "public")));
 
-// In-memory session store: { id: { answers: {}, index: 0, createdAt } }
+const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
+
+// formId -> { buffer, mode, fields, name, createdAt }
+const forms = new Map();
+// sessionId -> { id, formId, answers, index, confirmed, createdAt }
 const sessions = new Map();
 
-const SESSION_TTL_MS = 1000 * 60 * 60; // 1 hour
-function cleanupSessions() {
+const TTL_MS = 1000 * 60 * 60; // 1 hour
+function cleanup() {
   const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (now - s.createdAt > SESSION_TTL_MS) sessions.delete(id);
-  }
+  for (const [id, f] of forms) if (now - f.createdAt > TTL_MS) forms.delete(id);
+  for (const [id, s] of sessions) if (now - s.createdAt > TTL_MS) sessions.delete(id);
 }
-setInterval(cleanupSessions, 1000 * 60 * 10).unref();
+setInterval(cleanup, 1000 * 60 * 10).unref();
 
-function buildSummary(session) {
-  return questions.map((q) => ({
-    fieldId: q.id,
-    section: q.section,
-    question: q.question,
-    answer: session.answers[q.id] || "",
+function buildSummary(session, fields) {
+  return fields.map((f) => ({
+    fieldId: f.id,
+    section: f.label || f.name || "",
+    question: f.question,
+    answer: session.answers[f.id] || "",
   }));
 }
 
 function buildMessage(session) {
+  const form = forms.get(session.formId);
+  if (!form) return { sessionId: session.id, error: "Form expired or not found" };
+  const fields = form.fields;
   const idx = session.index;
-  if (idx >= questions.length) {
+
+  if (idx >= fields.length) {
     if (!session.confirmed) {
       return {
         sessionId: session.id,
@@ -42,17 +50,18 @@ function buildMessage(session) {
           "That's everything! Please review your answers below. " +
           'If everything looks correct, POST to /api/sessions/:id/confirm with {"confirm": true} to generate the PDF. ' +
           'To change an answer first, POST {"fieldId": "...", "answer": "..."}.',
-        summary: buildSummary(session),
+        summary: buildSummary(session, fields),
       };
     }
-    return { sessionId: session.id, done: true, message: "Confirmed! Call GET /api/sessions/:id/pdf to retrieve the filled lease document." };
+    return { sessionId: session.id, done: true, message: "Confirmed! Call GET /api/sessions/:id/pdf to retrieve the filled PDF." };
   }
-  const q = questions[idx];
-  const suggestion = getSuggestion(q.id, session.answers);
+
+  const f = fields[idx];
+  const suggestion = getSuggestion(f, fields, session.answers);
 
   let text = "";
-  if (q.context) text += q.context + "\n\n";
-  text += q.question;
+  if (f.context) text += f.context + "\n\n";
+  text += f.question;
   if (suggestion) {
     text += `\n\n(Based on your earlier answers, this looks like it should be ${suggestion}. Press enter / reply "yes" to accept, or type a different value.)`;
   }
@@ -60,20 +69,41 @@ function buildMessage(session) {
   return {
     sessionId: session.id,
     done: false,
-    fieldId: q.id,
-    section: q.section,
-    context: q.context,
-    question: q.question,
+    fieldId: f.id,
+    section: f.label || f.name || "",
+    context: f.context,
+    question: f.question,
+    options: f.options || null,
     suggestedAnswer: suggestion,
     message: text,
-    progress: { current: idx + 1, total: questions.length },
+    progress: { current: idx + 1, total: fields.length },
   };
 }
 
-// Start a new chatbot session
-app.post("/api/sessions", (req, res) => {
+// Upload a PDF form to be analyzed
+app.post("/api/forms", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded (expected multipart field 'file')" });
+  try {
+    const { mode, fields } = await analyzePdf(req.file.buffer);
+    if (fields.length === 0) {
+      return res.status(422).json({ error: "No fillable fields or blanks could be found in this PDF" });
+    }
+    const formId = randomUUID();
+    forms.set(formId, { buffer: req.file.buffer, mode, fields, name: req.file.originalname, createdAt: Date.now() });
+    res.json({ formId, mode, fieldCount: fields.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to analyze PDF" });
+  }
+});
+
+// Start a new chatbot session for an uploaded form
+app.post("/api/forms/:formId/sessions", (req, res) => {
+  const form = forms.get(req.params.formId);
+  if (!form) return res.status(404).json({ error: "Form not found (it may have expired - re-upload)" });
+
   const id = randomUUID();
-  const session = { id, answers: {}, index: 0, createdAt: Date.now() };
+  const session = { id, formId: req.params.formId, answers: {}, index: 0, createdAt: Date.now() };
   sessions.set(id, session);
   res.json(buildMessage(session));
 });
@@ -89,20 +119,20 @@ app.get("/api/sessions/:id", (req, res) => {
 app.post("/api/sessions/:id/answer", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
+  const form = forms.get(session.formId);
+  if (!form) return res.status(404).json({ error: "Form expired or not found" });
 
   const { answer } = req.body || {};
-  if (session.index < questions.length) {
-    const q = questions[session.index];
+  if (session.index < form.fields.length) {
+    const f = form.fields[session.index];
     let value = answer != null ? String(answer).trim() : "";
 
-    // If the user accepts (or leaves blank) a question that has an
-    // auto-computed suggestion, use the suggested value instead.
-    const suggestion = getSuggestion(q.id, session.answers);
+    const suggestion = getSuggestion(f, form.fields, session.answers);
     if (suggestion && (value === "" || /^(y|yes|ok|okay|correct|same|accept)$/i.test(value))) {
       value = suggestion;
     }
 
-    session.answers[q.id] = value;
+    session.answers[f.id] = value;
     session.index += 1;
   }
   res.json(buildMessage(session));
@@ -112,14 +142,16 @@ app.post("/api/sessions/:id/answer", (req, res) => {
 app.post("/api/sessions/:id/confirm", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.index < questions.length) {
+  const form = forms.get(session.formId);
+  if (!form) return res.status(404).json({ error: "Form expired or not found" });
+  if (session.index < form.fields.length) {
     return res.status(400).json({ error: "All questions must be answered before confirming" });
   }
 
   const { confirm, fieldId, answer } = req.body || {};
 
   if (fieldId !== undefined) {
-    const valid = questions.find((q) => q.id === fieldId);
+    const valid = form.fields.find((f) => f.id === fieldId);
     if (!valid) return res.status(400).json({ error: `Unknown fieldId: ${fieldId}` });
     session.answers[fieldId] = answer != null ? String(answer).trim() : "";
     session.confirmed = false;
@@ -134,21 +166,24 @@ app.post("/api/sessions/:id/confirm", (req, res) => {
 app.get("/api/sessions/:id/answers", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
-  res.json({ sessionId: session.id, answers: session.answers, complete: session.index >= questions.length });
+  const form = forms.get(session.formId);
+  res.json({ sessionId: session.id, answers: session.answers, complete: form ? session.index >= form.fields.length : false });
 });
 
-// Generate and return the filled-in lease PDF
+// Generate and return the filled-in PDF
 app.get("/api/sessions/:id/pdf", async (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.index < questions.length || !session.confirmed) {
+  const form = forms.get(session.formId);
+  if (!form) return res.status(404).json({ error: "Form expired or not found" });
+  if (session.index < form.fields.length || !session.confirmed) {
     return res.status(400).json({ error: "Session not yet confirmed. POST to /api/sessions/:id/confirm first." });
   }
 
   try {
-    const pdfBuffer = await generateLeasePdf(questions, session.answers);
+    const pdfBuffer = await fillPdf(form.buffer, form.mode, form.fields, session.answers);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", 'attachment; filename="nj-lease-form-125-filled.pdf"');
+    res.setHeader("Content-Disposition", 'attachment; filename="filled-form.pdf"');
     res.send(pdfBuffer);
   } catch (err) {
     console.error(err);
@@ -165,4 +200,4 @@ app.delete("/api/sessions/:id", (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`NJ Lease Chatbot API listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`PDF Form Chatbot API listening on port ${PORT}`));

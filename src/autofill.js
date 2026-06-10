@@ -1,26 +1,23 @@
-// Helpers to derive answers automatically from previously-given answers.
+// Generic "smart fill" rules: derive a suggested answer for a field from
+// answers already given for other fields (e.g. lease end date from start
+// date + term length).
 
 const MONTHS = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
 ];
 
-/**
- * Parse a loosely-formatted date string into a Date (UTC midnight) or null.
- * Accepts forms like "1/1/2026", "01-01-2026", "January 1, 2026", "Jan 1 2026".
- */
 function parseDate(str) {
   if (!str) return null;
   const s = str.trim();
 
-  // M/D/YYYY or M-D-YYYY
-  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (m) {
-    const [, mo, d, y] = m;
+    let [, mo, d, y] = m;
+    if (y.length === 2) y = `20${y}`;
     return new Date(Date.UTC(+y, +mo - 1, +d));
   }
 
-  // Month D, YYYY  or  Month D YYYY
   m = s.match(/^([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/);
   if (m) {
     const [, monName, d, y] = m;
@@ -28,7 +25,6 @@ function parseDate(str) {
     if (idx >= 0) return new Date(Date.UTC(+y, idx, +d));
   }
 
-  // Fallback to native parser
   const native = new Date(s);
   if (!isNaN(native.getTime())) {
     return new Date(Date.UTC(native.getFullYear(), native.getMonth(), native.getDate()));
@@ -37,18 +33,17 @@ function parseDate(str) {
   return null;
 }
 
-/**
- * Parse a lease-term length string like "12 months", "1 year", "6 mo" into
- * { months } or null.
- */
 function parseTermLength(str) {
   if (!str) return null;
   const s = str.trim().toLowerCase();
-  const m = s.match(/(\d+(?:\.\d+)?)\s*(month|mo|year|yr)/);
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(month|mo|year|yr|week|wk|day)/);
   if (!m) return null;
   const value = parseFloat(m[1]);
   const unit = m[2];
-  const months = unit.startsWith("y") ? value * 12 : value;
+  let months;
+  if (unit.startsWith("y")) months = value * 12;
+  else if (unit.startsWith("mo")) months = value;
+  else return { days: unit.startsWith("w") ? value * 7 : value };
   return { months };
 }
 
@@ -59,50 +54,54 @@ function formatDate(date) {
   return `${mm}/${dd}/${yyyy}`;
 }
 
-/**
- * Given the start date string and term length string, compute the lease
- * end date string (start + term, minus one day). Returns null if either
- * input can't be parsed.
- */
 function computeTermEnd(termStartStr, termLengthStr) {
   const start = parseDate(termStartStr);
   const term = parseTermLength(termLengthStr);
   if (!start || !term) return null;
 
   const end = new Date(start.getTime());
-  const wholeMonths = Math.trunc(term.months);
-  const fractionMonths = term.months - wholeMonths;
-
-  end.setUTCMonth(end.getUTCMonth() + wholeMonths);
-  if (fractionMonths) {
-    end.setUTCDate(end.getUTCDate() + Math.round(fractionMonths * 30));
+  if (term.months != null) {
+    const wholeMonths = Math.trunc(term.months);
+    const fractionMonths = term.months - wholeMonths;
+    end.setUTCMonth(end.getUTCMonth() + wholeMonths);
+    if (fractionMonths) end.setUTCDate(end.getUTCDate() + Math.round(fractionMonths * 30));
+  } else if (term.days != null) {
+    end.setUTCDate(end.getUTCDate() + term.days);
   }
-  // End date is the day before the anniversary of the start date.
   end.setUTCDate(end.getUTCDate() - 1);
 
   return formatDate(end);
 }
 
-/**
- * Registry of autofill rules. Each rule may compute a suggested value for
- * a given field based on the answers collected so far.
- */
-const RULES = {
-  term_end: (answers) => computeTermEnd(answers.term_start, answers.term_length),
-};
+const END_DATE_RE = /\b(end(ing)?|expir|termination)\b.*\b(date|on)\b|\bend(ing)?\s*date\b/i;
+const START_DATE_RE = /\b(start(ing)?|begin(ning)?|commenc\w*|effective)\b.*\b(date|on)\b/i;
+const TERM_LENGTH_RE = /\b(term|length|duration)\b/i;
 
-/**
- * Returns a suggested value for the given field id, or null if no
- * suggestion is available.
- */
-function getSuggestion(fieldId, answers) {
-  const rule = RULES[fieldId];
-  if (!rule) return null;
-  try {
-    return rule(answers) || null;
-  } catch {
-    return null;
+function fieldText(field) {
+  return `${field.label || ""} ${field.context || ""} ${field.question || ""}`;
+}
+
+// Returns a suggested value for `field`, or null if none applies.
+// `fields` is the full ordered list of fields for this form; `answers` is
+// the map of fieldId -> answer collected so far.
+function getSuggestion(field, fields, answers) {
+  if (field.type && field.type !== "text" && field.type !== "blank") return null;
+
+  const text = fieldText(field);
+  if (!END_DATE_RE.test(text)) return null;
+
+  let startAnswer = null;
+  let termAnswer = null;
+  for (const f of fields) {
+    const ans = answers[f.id];
+    if (!ans) continue;
+    const ft = fieldText(f);
+    if (!startAnswer && START_DATE_RE.test(ft) && parseDate(ans)) startAnswer = ans;
+    if (!termAnswer && TERM_LENGTH_RE.test(ft) && parseTermLength(ans)) termAnswer = ans;
   }
+
+  if (!startAnswer || !termAnswer) return null;
+  return computeTermEnd(startAnswer, termAnswer);
 }
 
 module.exports = { getSuggestion, computeTermEnd, parseDate, parseTermLength };

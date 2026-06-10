@@ -3,6 +3,7 @@ const path = require("path");
 const { randomUUID } = require("crypto");
 const questions = require("./questions.json");
 const { generateLeasePdf } = require("./pdfFiller");
+const { getSuggestion } = require("./autofill");
 
 const app = express();
 app.use(express.json());
@@ -26,9 +27,15 @@ function buildMessage(session) {
     return { sessionId: session.id, done: true, message: "That's everything! Call GET /api/sessions/:id/pdf to retrieve the filled lease document." };
   }
   const q = questions[idx];
+  const suggestion = getSuggestion(q.id, session.answers);
+
   let text = "";
   if (q.context) text += q.context + "\n\n";
   text += q.question;
+  if (suggestion) {
+    text += `\n\n(Based on your earlier answers, this looks like it should be ${suggestion}. Press enter / reply "yes" to accept, or type a different value.)`;
+  }
+
   return {
     sessionId: session.id,
     done: false,
@@ -36,6 +43,7 @@ function buildMessage(session) {
     section: q.section,
     context: q.context,
     question: q.question,
+    suggestedAnswer: suggestion,
     message: text,
     progress: { current: idx + 1, total: questions.length },
   };
@@ -64,7 +72,16 @@ app.post("/api/sessions/:id/answer", (req, res) => {
   const { answer } = req.body || {};
   if (session.index < questions.length) {
     const q = questions[session.index];
-    session.answers[q.id] = answer != null ? String(answer) : "";
+    let value = answer != null ? String(answer).trim() : "";
+
+    // If the user accepts (or leaves blank) a question that has an
+    // auto-computed suggestion, use the suggested value instead.
+    const suggestion = getSuggestion(q.id, session.answers);
+    if (suggestion && (value === "" || /^(y|yes|ok|okay|correct|same|accept)$/i.test(value))) {
+      value = suggestion;
+    }
+
+    session.answers[q.id] = value;
     session.index += 1;
   }
   res.json(buildMessage(session));

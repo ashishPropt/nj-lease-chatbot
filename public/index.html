@@ -77,6 +77,10 @@ function handleResponse(data) {
   } else {
     addMsg(data.message, 'bot', data.section);
     progress.textContent = 'Question ' + data.progress.current + ' of ' + data.progress.total;
+    if (data.suggestedAnswer) {
+      input.value = data.suggestedAnswer;
+      input.select();
+    }
   }
 }
 

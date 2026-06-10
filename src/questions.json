@@ -1,0 +1,182 @@
+[
+  {
+    "id": "landlord_names",
+    "section": "Parties",
+    "context": "RESIDENTIAL LEASE AGREEMENT\n\nBETWEEN LANDLORD(S): __________\n\nThe word \"Landlord\" as used in this Lease means all of the landlords above listed. In all instances in which the Landlord may exercise rights or perform obligations under this Lease, it may do so through its authorized agents or representatives.",
+    "question": "Who is/are the Landlord(s)? (Full legal name(s), separated by commas if more than one)"
+  },
+  {
+    "id": "landlord_address",
+    "section": "Parties",
+    "context": "whose address is/are __________",
+    "question": "What is the Landlord's address (or addresses)?"
+  },
+  {
+    "id": "tenant_names",
+    "section": "Parties",
+    "context": "AND TENANT(S): __________\n\nThe word \"Tenant\" as used in this Lease means all of the tenants above listed.",
+    "question": "Who is/are the Tenant(s)? (Full legal name(s), separated by commas if more than one)"
+  },
+  {
+    "id": "tenant_address",
+    "section": "Parties",
+    "context": "whose address is/are __________",
+    "question": "What is the Tenant's current address (before moving in)?"
+  },
+  {
+    "id": "property_type",
+    "section": "2. PROPERTY",
+    "context": "2. PROPERTY: The Tenant agrees to lease from the Landlord and the Landlord agrees to lease to the Tenant (the single family home) (apartment # ____) (condominium unit #____) (townhouse unit #____) having a street address of __________ located in __________, New Jersey (referred to as the \"Property\").",
+    "question": "What type of property is being leased - a single family home, apartment, condominium unit, or townhouse unit? If apartment/condo/townhouse, please also give the unit number."
+  },
+  {
+    "id": "property_address",
+    "section": "2. PROPERTY",
+    "context": "having a street address of __________",
+    "question": "What is the street address of the Property?"
+  },
+  {
+    "id": "property_municipality",
+    "section": "2. PROPERTY",
+    "context": "located in __________, New Jersey (referred to as the \"Property\").",
+    "question": "What city/town (municipality) in New Jersey is the Property located in?"
+  },
+  {
+    "id": "term_length",
+    "section": "3. TERM",
+    "context": "3. TERM: The Term of this Lease is for __________ (months) (years) starting on __________ and ending on __________. This is referred to as the \"Term\". If the Landlord is unable to give possession of the Property to the Tenant on the first day of the Term, the Landlord shall not have any liability to the Tenant. However, the Tenant shall not be liable for the payment of rent until the Landlord gives possession of the Property to the Tenant. If the Landlord fails to give possession of the Property within 30 days of the start date set forth above, then the Tenant may terminate this Lease by giving notice to Landlord. If the first day of the Term is delayed, then the last day of the Term shall be adjusted accordingly, so that the Term remains for the number of months or years above stated.",
+    "question": "What is the length of the lease Term, in months or years (e.g. '12 months' or '1 year')?"
+  },
+  {
+    "id": "term_start",
+    "section": "3. TERM",
+    "context": "starting on __________",
+    "question": "What date does the Term start?"
+  },
+  {
+    "id": "term_end",
+    "section": "3. TERM",
+    "context": "and ending on __________.",
+    "question": "What date does the Term end?"
+  },
+  {
+    "id": "rent_total",
+    "section": "4. RENT",
+    "context": "4. RENT: The rent for the Term of this Lease is $ __________, to be paid as follows: $__________ per month, which is due on the __________ day of each month. Rent shall be payable to: __________ (NAME AND ADDRESS).",
+    "question": "What is the TOTAL rent for the entire Term (in dollars)?"
+  },
+  {
+    "id": "rent_monthly",
+    "section": "4. RENT",
+    "context": "to be paid as follows: $__________ per month",
+    "question": "What is the monthly rent amount (in dollars)?"
+  },
+  {
+    "id": "rent_due_day",
+    "section": "4. RENT",
+    "context": "which is due on the __________ day of each month.",
+    "question": "On which day of each month is rent due (e.g. '1st', '5th')?"
+  },
+  {
+    "id": "rent_payable_to",
+    "section": "4. RENT",
+    "context": "Rent shall be payable to: __________ (NAME AND ADDRESS).",
+    "question": "Who should rent be made payable to, and what is their full name and address?"
+  },
+  {
+    "id": "initial_deposit_amount",
+    "section": "5. INITIAL DEPOSIT",
+    "context": "5. INITIAL DEPOSIT: Tenant has paid an initial deposit of $__________ received on __________ that will be credited towards ____ the first month's rent or ____ the Security Deposit. The balance shall be paid as follows: First month's rent $__________ Due on __________, Security Deposit $__________ Due on __________.",
+    "question": "How much is the Initial Deposit (in dollars), and on what date was it received?"
+  },
+  {
+    "id": "initial_deposit_credit",
+    "section": "5. INITIAL DEPOSIT",
+    "context": "that will be credited towards ____ the first month's rent or ____ the Security Deposit.",
+    "question": "Will the Initial Deposit be credited toward the first month's rent, or toward the Security Deposit?"
+  },
+  {
+    "id": "initial_deposit_balance",
+    "section": "5. INITIAL DEPOSIT",
+    "context": "The balance shall be paid as follows: First month's rent $__________ Due on __________, Security Deposit $__________ Due on __________.",
+    "question": "What is the remaining balance due for the first month's rent and the Security Deposit, and when is each balance due? (Please give both amounts and both due dates.)"
+  },
+  {
+    "id": "security_deposit",
+    "section": "6. SECURITY DEPOSIT",
+    "context": "6. SECURITY DEPOSIT: The Tenant shall pay to the Landlord the sum of $__________ (the \"Security Deposit,\" which cannot exceed one and one-half months rent) to assure that the Tenant performs all of the Tenant's obligations under this Lease. If the Landlord collects any additional Security Deposit, the additional security collected annually shall not be greater than 10 percent of the current Security Deposit. Landlord shall comply with the Rent Security Deposit Act, N.J.S.A. 46:8-19 et seq.",
+    "question": "What is the total Security Deposit amount (in dollars)? Note: it cannot exceed one and one-half month's rent."
+  },
+  {
+    "id": "late_payment",
+    "section": "7. LATE PAYMENT PENALTY",
+    "context": "7. LATE PAYMENT PENALTY: If the Tenant does not pay the rent by the __________ day of the month, the Tenant shall pay a late charge of __________ until the rent is received by Landlord. The late charge shall be added to the rent, and shall be considered as additional rent. In the event any rent check is returned unpaid due to insufficient funds, the Tenant agrees to pay the Landlord a $__________ processing charge.",
+    "question": "By which day of the month must rent be paid to avoid a late charge, and what is the late charge amount (a flat fee or a percentage)?"
+  },
+  {
+    "id": "nsf_fee",
+    "section": "7. LATE PAYMENT PENALTY",
+    "context": "In the event any rent check is returned unpaid due to insufficient funds, the Tenant agrees to pay the Landlord a $__________ processing charge.",
+    "question": "What is the returned-check (NSF) processing charge, in dollars?"
+  },
+  {
+    "id": "utilities_tenant",
+    "section": "10. UTILITIES",
+    "context": "10. UTILITIES: The Tenant shall arrange to have the utilities transferred into Tenant's name prior to occupancy, and shall be responsible for paying the following utility services: Gas / Electric / Water / Heat / Sewer / General Trash Disposal / (Other) __________.",
+    "question": "Which utilities will the TENANT be responsible for paying? (e.g. Gas, Electric, Water, Heat, Sewer, General Trash Disposal, or Other - please list all that apply)"
+  },
+  {
+    "id": "utilities_landlord",
+    "section": "10. UTILITIES",
+    "context": "The Landlord shall provide and pay for the following utility services: Gas / Electric / Water / Heat / Sewer / General Trash Disposal / (Other) __________.",
+    "question": "Which utilities will the LANDLORD provide and pay for? (e.g. Gas, Electric, Water, Heat, Sewer, General Trash Disposal, or Other - please list all that apply, or say 'none')"
+  },
+  {
+    "id": "renewal_notice_days",
+    "section": "27. RENEWAL OF LEASE",
+    "context": "27. RENEWAL OF LEASE: The Tenant must be offered a renewal of this Lease by the Landlord, unless the Landlord has good cause not to do so under applicable law. Reasonable changes may be included in the renewal Lease. Not less than __________ days before the expiration of the Term of this Lease, the Landlord shall notify the Tenant of the proposed terms for the renewal Lease. Within __________ days after the Tenant receives the Landlord's renewal notice, Tenant shall notify Landlord whether Tenant accepts or rejects the proposed renewal Lease.",
+    "question": "How many days before the Term ends must the Landlord notify the Tenant of renewal terms, and how many days does the Tenant then have to respond? (Please give both numbers)"
+  },
+  {
+    "id": "broker_commission",
+    "section": "34. BROKER'S COMMISSION",
+    "context": "34. BROKER'S COMMISSION: The Broker's Commission is earned, due and payable upon signing of a fully executed Lease Agreement and satisfaction of the Attorney Review Period. The Commission shall be paid by the (Landlord, in accord with previously executed brokerage services agreement) OR (Tenant, payable as follows: __________).",
+    "question": "Will the Broker's Commission be paid by the Landlord (per a prior listing agreement) or by the Tenant? If paid by the Tenant, please describe how it will be paid."
+  },
+  {
+    "id": "lead_based_paint",
+    "section": "35. LEAD-BASED PAINT",
+    "context": "35. LEAD-BASED PAINT: (Applies to dwellings built before 1978) The Tenant acknowledges receipt of the EPA pamphlet, \"Protect Your Family From Lead In Your Home\". A copy of the document entitled \"Disclosure of Information on Lead-Based Paint and Lead-Based Paint Hazards\" has been signed by Tenant, Landlord and Broker(s) and is appended to this Lease. New Jersey law also requires that rental dwellings built before 1978 be inspected for lead-based paint by July 22, 2024, or upon tenant turnover, whichever is earlier (with some exemptions).",
+    "question": "Was the Property built before 1978? (yes/no - if yes, the lead-based paint disclosure documents must be attached)"
+  },
+  {
+    "id": "licensee_relationship",
+    "section": "39. DECLARATION OF LICENSEE BUSINESS RELATIONSHIP",
+    "context": "39. DECLARATION OF LICENSEE BUSINESS RELATIONSHIP(S): A. __________ (name of firm) AND __________ (name(s) of licensee(s)) AS ITS AUTHORIZED REPRESENTATIVE(S) ARE WORKING IN THIS TRANSACTION AS (choose one): LANDLORD'S AGENT / TENANT'S AGENT / DISCLOSED DUAL AGENT / DESIGNATED AGENTS / TRANSACTION BROKER.",
+    "question": "What is the name of the real estate firm and the licensee(s) involved (if any), and in what capacity are they acting (Landlord's Agent, Tenant's Agent, Disclosed Dual Agent, Designated Agents, or Transaction Broker)? If no broker is involved, say 'none'."
+  },
+  {
+    "id": "licensee_party",
+    "section": "40. DISCLOSURE THAT LANDLORD OR TENANT IS A REAL ESTATE LICENSEE",
+    "context": "40. DISCLOSURE THAT LANDLORD OR TENANT IS A REAL ESTATE LICENSEE: As a real estate licensee in the State of New Jersey who is, or has an interest in an entity that is, the Landlord or Tenant in this Lease, __________ discloses that he/she/it is licensed in New Jersey as a real estate brokerage company / broker / broker-salesperson / salesperson / referral agent.",
+    "question": "Is the Landlord or Tenant (or anyone with an interest in either) a licensed New Jersey real estate licensee? If so, please give their name and license type (broker, broker-salesperson, salesperson, or referral agent). Otherwise say 'not applicable'."
+  },
+  {
+    "id": "rent_control_exemption",
+    "section": "46. NEW MULTIPLE DWELLING RENT CONTROL / LEVELING EXEMPTION",
+    "context": "46. NEW MULTIPLE DWELLING RENT CONTROL / LEVELING EXEMPTION: If this box is checked, then the Property is exempt from rent control or rent leveling for such time as remains in the exemption period as provided in N.J.S.A. 2A:42-84.1, et seq.",
+    "question": "Is the Property exempt from rent control / rent leveling under the New Multiple Dwelling exemption? (yes/no)"
+  },
+  {
+    "id": "addenda",
+    "section": "47. ADDENDA",
+    "context": "47. ADDENDA: The following additional terms are included in the attached addenda or riders and incorporated into this Lease (check if applicable): Addendum Permitting Pets.",
+    "question": "Are there any addenda or riders attached to this Lease (e.g. an Addendum Permitting Pets)? If so, list them. Otherwise say 'none'."
+  },
+  {
+    "id": "other_provisions",
+    "section": "48. OTHER LEASE PROVISIONS",
+    "context": "48. OTHER LEASE PROVISIONS, IF ANY: __________",
+    "question": "Are there any other lease provisions you'd like to add? If none, say 'none'."
+  }
+]

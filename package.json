@@ -1,0 +1,13 @@
+{
+  "name": "nj-lease-chatbot",
+  "version": "1.0.0",
+  "description": "API + chatbot that fills out NJ REALTORS Form 125 Residential Lease and returns a filled PDF",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdfkit": "^0.15.0"
+  }
+}

@@ -44,6 +44,8 @@ async function extractBlankFields(buffer) {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
+    const [, , , pageHeight] = page.view;
+    const MARGIN = 54; // skip header/footer zones (page numbers, running headers)
 
     // Group text items into "tokens" — splitting any item that contains a
     // run of underscores into (text, blank, text, ...) pieces, each with an
@@ -54,6 +56,8 @@ async function extractBlankFields(buffer) {
       if (!str) continue;
       const x = item.transform[4];
       const y = item.transform[5];
+      if (y < MARGIN || y > pageHeight - MARGIN) continue;
+      if (x < 30 && /^\d{1,3}$/.test(str.trim())) continue; // left-margin line numbers
       const width = item.width || 0;
       const len = str.length || 1;
 
@@ -77,17 +81,23 @@ async function extractBlankFields(buffer) {
       }
     }
 
-    // Group tokens into lines by rounded y, then sort each line by x.
-    const lines = new Map();
-    for (const tok of tokens) {
-      const key = Math.round(tok.y);
-      if (!lines.has(key)) lines.set(key, []);
-      lines.get(key).push(tok);
+    // Group tokens into lines using a y-tolerance (text on the "same line"
+    // can have slightly different y values due to mixed fonts/sizes).
+    const sorted = [...tokens].sort((a, b) => b.y - a.y || a.x - b.x);
+    const Y_TOLERANCE = 2.5;
+    const lineGroups = [];
+    for (const tok of sorted) {
+      let group = lineGroups.find((g) => Math.abs(g.y - tok.y) <= Y_TOLERANCE);
+      if (!group) {
+        group = { y: tok.y, items: [] };
+        lineGroups.push(group);
+      }
+      group.items.push(tok);
     }
-    const lineKeys = Array.from(lines.keys()).sort((a, b) => b - a);
+    lineGroups.sort((a, b) => b.y - a.y);
 
-    for (const key of lineKeys) {
-      const lineTokens = lines.get(key).sort((a, b) => a.x - b.x);
+    for (const group of lineGroups) {
+      const lineTokens = group.items.sort((a, b) => a.x - b.x);
       const lineText = lineTokens.map((t) => (t.type === "text" ? t.text : "____")).join("");
 
       lineTokens.forEach((tok, idx) => {
@@ -112,6 +122,24 @@ async function extractBlankFields(buffer) {
           label: cleanLabel(before).slice(-40) || cleanLabel(after).slice(0, 40),
         });
       });
+    }
+  }
+
+  // A line that is *only* a blank (e.g. a wrapped continuation of the
+  // previous line's blank, often used for multi-line addresses) carries no
+  // useful context of its own. Link it to the previous "real" field so the
+  // chatbot doesn't ask a separate, contentless question, but still fill
+  // both spots with the same answer.
+  let lastReal = null;
+  for (const f of fields) {
+    const isBlankOnly = f.context.replace(/_/g, "").trim() === "";
+    if (isBlankOnly && lastReal) {
+      f.linkedTo = lastReal.id;
+      f.context = lastReal.context;
+      f.question = lastReal.question;
+      f.label = lastReal.label;
+    } else if (!isBlankOnly) {
+      lastReal = f;
     }
   }
 

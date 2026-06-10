@@ -37,7 +37,7 @@ function buildSummary(session, fields) {
 function buildMessage(session) {
   const form = forms.get(session.formId);
   if (!form) return { sessionId: session.id, error: "Form expired or not found" };
-  const fields = form.fields;
+  const fields = form.questionFields;
   const idx = session.index;
 
   if (idx >= fields.length) {
@@ -88,9 +88,10 @@ app.post("/api/forms", upload.single("file"), async (req, res) => {
     if (fields.length === 0) {
       return res.status(422).json({ error: "No fillable fields or blanks could be found in this PDF" });
     }
+    const questionFields = fields.filter((f) => !f.linkedTo);
     const formId = randomUUID();
-    forms.set(formId, { buffer: req.file.buffer, mode, fields, name: req.file.originalname, createdAt: Date.now() });
-    res.json({ formId, mode, fieldCount: fields.length });
+    forms.set(formId, { buffer: req.file.buffer, mode, fields, questionFields, name: req.file.originalname, createdAt: Date.now() });
+    res.json({ formId, mode, fieldCount: questionFields.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to analyze PDF" });
@@ -123,11 +124,11 @@ app.post("/api/sessions/:id/answer", (req, res) => {
   if (!form) return res.status(404).json({ error: "Form expired or not found" });
 
   const { answer } = req.body || {};
-  if (session.index < form.fields.length) {
-    const f = form.fields[session.index];
+  if (session.index < form.questionFields.length) {
+    const f = form.questionFields[session.index];
     let value = answer != null ? String(answer).trim() : "";
 
-    const suggestion = getSuggestion(f, form.fields, session.answers);
+    const suggestion = getSuggestion(f, form.questionFields, session.answers);
     if (suggestion && (value === "" || /^(y|yes|ok|okay|correct|same|accept)$/i.test(value))) {
       value = suggestion;
     }
@@ -144,14 +145,14 @@ app.post("/api/sessions/:id/confirm", (req, res) => {
   if (!session) return res.status(404).json({ error: "Session not found" });
   const form = forms.get(session.formId);
   if (!form) return res.status(404).json({ error: "Form expired or not found" });
-  if (session.index < form.fields.length) {
+  if (session.index < form.questionFields.length) {
     return res.status(400).json({ error: "All questions must be answered before confirming" });
   }
 
   const { confirm, fieldId, answer } = req.body || {};
 
   if (fieldId !== undefined) {
-    const valid = form.fields.find((f) => f.id === fieldId);
+    const valid = form.questionFields.find((f) => f.id === fieldId);
     if (!valid) return res.status(400).json({ error: `Unknown fieldId: ${fieldId}` });
     session.answers[fieldId] = answer != null ? String(answer).trim() : "";
     session.confirmed = false;
@@ -167,7 +168,7 @@ app.get("/api/sessions/:id/answers", (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
   const form = forms.get(session.formId);
-  res.json({ sessionId: session.id, answers: session.answers, complete: form ? session.index >= form.fields.length : false });
+  res.json({ sessionId: session.id, answers: session.answers, complete: form ? session.index >= form.questionFields.length : false });
 });
 
 // Generate and return the filled-in PDF
@@ -176,12 +177,16 @@ app.get("/api/sessions/:id/pdf", async (req, res) => {
   if (!session) return res.status(404).json({ error: "Session not found" });
   const form = forms.get(session.formId);
   if (!form) return res.status(404).json({ error: "Form expired or not found" });
-  if (session.index < form.fields.length || !session.confirmed) {
+  if (session.index < form.questionFields.length || !session.confirmed) {
     return res.status(400).json({ error: "Session not yet confirmed. POST to /api/sessions/:id/confirm first." });
   }
 
   try {
-    const pdfBuffer = await fillPdf(form.buffer, form.mode, form.fields, session.answers);
+    const answers = { ...session.answers };
+    for (const f of form.fields) {
+      if (f.linkedTo) answers[f.id] = answers[f.linkedTo];
+    }
+    const pdfBuffer = await fillPdf(form.buffer, form.mode, form.fields, answers);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", 'attachment; filename="filled-form.pdf"');
     res.send(pdfBuffer);

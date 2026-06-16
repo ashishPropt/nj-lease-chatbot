@@ -3,29 +3,49 @@
 //
 // Two modes:
 //  - "acroform": the PDF has real AcroForm fields (text/checkbox/radio/dropdown).
-//    We ask one question per field.
-//  - "blanks": the PDF is a flattened/scanned-but-text form with literal
-//    underscore blanks ("______"). We locate each blank's position on the
-//    page (via pdf.js text positions) so we can later draw the answer there.
+//  - "blanks": the PDF is a flattened form with literal underscore blanks ("______").
 
 const { PDFDocument } = require("pdf-lib");
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 
 const BLANK_RE = /_{3,}/g;
 
+// A section heading is a SHORT all-caps or numbered line with no blanks
+// and no lowercase (so long legal sentences are excluded).
+// e.g. "3. TERM", "2. PROPERTY", "PARTIES"
+const HEADING_RE = /^(\d+\.)?\s*[A-Z][A-Z\s'\/\-]{1,}[A-Z]\.?$/;
+
+// Detects "4. RENT" or "27. RENEWAL OF LEASE" embedded at start of a clause line.
+const INLINE_HEADING_RE = /^(\d+\.\s+[A-Z][A-Z\s'\/\-]{1,}[A-Z])[\s:.]/;
+
 function cleanLabel(text) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// Build a short, natural question from the words immediately surrounding a
-// blank, without just echoing the whole line back at the user.
+// Build a SHORT, non-redundant question. The full clause line (context) is
+// already shown above, so the question just names the field concisely.
 function buildQuestion(before, after) {
-  const b = cleanLabel(before).slice(-80).replace(/^[\s,.;:()]+|[\s,.;:]+$/g, "");
-  const a = cleanLabel(after).slice(0, 60).replace(/^[\s,.;:]+|[\s,.;:()]+$/g, "");
+  // Strip ALL trailing punctuation/parens/brackets from the "before" text
+  // so we get a clean label like "BETWEEN LANDLORD" or "rent for the Term is $"
+  const b = cleanLabel(before).replace(/[\s,.;:()\[\]{}#]+$/g, "");
+  // Strip ALL leading punctuation from "after"
+  const a = cleanLabel(after).replace(/^[\s,.;:()\[\]{}#]+/, "");
 
-  if (b) return `What is "${b}"?`;
-  if (a) return `What value goes before "${a}"?`;
-  return "What value goes here?";
+  if (b) {
+    // Use the last clause after a colon or period-space to skip long preamble.
+    // Then strip any stray parens/brackets from the final label.
+    const segments = b.split(/:\s+|\.\s+/);
+    const raw = segments[segments.length - 1].trim().slice(-60);
+    const label = raw.replace(/[()[\]{}]+/g, "").replace(/\s+/g, " ").trim();
+    if (label) return `Enter ${label}:`;
+  }
+  if (a) {
+    // First meaningful word-group from the "after" text
+    const raw = a.split(/[,.;:()\[\]{}]/)[0].trim().slice(0, 40);
+    const label = raw.replace(/[()[\]{}]+/g, "").trim();
+    if (label) return `Enter value (goes before "${label}"):`;
+  }
+  return "Enter the value for this blank:";
 }
 
 async function extractBlankFields(buffer) {
@@ -38,16 +58,15 @@ async function extractBlankFields(buffer) {
 
   const fields = [];
   let counter = 0;
+  let currentHeading = "";
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
     const [, , , pageHeight] = page.view;
-    const MARGIN = 54; // skip header/footer zones (page numbers, running headers)
+    const MARGIN = 54; // skip header/footer zones
 
-    // Group text items into "tokens" — splitting any item that contains a
-    // run of underscores into (text, blank, text, ...) pieces, each with an
-    // approximate x position based on character offset.
+    // Build tokens, splitting items that contain underscore-runs into pieces
     const tokens = [];
     for (const item of content.items) {
       const str = item.str;
@@ -56,7 +75,8 @@ async function extractBlankFields(buffer) {
       const y = item.transform[5];
       if (y < MARGIN || y > pageHeight - MARGIN) continue;
       if (x < 30 && /^\d{1,3}$/.test(str.trim())) continue; // left-margin line numbers
-      if (str.trim() === "q") continue; // Wingdings checkbox glyph rendered as "q"
+      if (str.trim() === "q") continue; // Wingdings unchecked-checkbox glyph
+
       const width = item.width || 0;
       const len = str.length || 1;
 
@@ -80,8 +100,7 @@ async function extractBlankFields(buffer) {
       }
     }
 
-    // Group tokens into lines using a y-tolerance (text on the "same line"
-    // can have slightly different y values due to mixed fonts/sizes).
+    // Cluster tokens into visual lines using a y-tolerance
     const sorted = [...tokens].sort((a, b) => b.y - a.y || a.x - b.x);
     const Y_TOLERANCE = 2.5;
     const lineGroups = [];
@@ -98,23 +117,33 @@ async function extractBlankFields(buffer) {
     for (const group of lineGroups) {
       const lineTokens = group.items.sort((a, b) => a.x - b.x);
       const lineText = lineTokens.map((t) => (t.type === "text" ? t.text : "____")).join("");
+      const hasBlank = lineTokens.some((t) => t.type === "blank");
+
+      // Detect section headings (no blanks, short, all-caps or numbered)
+      if (!hasBlank) {
+        const cleaned = cleanLabel(lineText);
+        if (HEADING_RE.test(cleaned) && cleaned.length < 50) {
+          currentHeading = cleaned;
+        }
+        continue;
+      }
+
+      // Also pick up "4. RENT: ..." style headings embedded in a clause line
+      const inlineMatch = cleanLabel(lineText).match(INLINE_HEADING_RE);
+      if (inlineMatch) currentHeading = inlineMatch[1].trim();
 
       const blankIdxs = lineTokens.map((t, i) => (t.type === "blank" ? i : -1)).filter((i) => i >= 0);
 
       lineTokens.forEach((tok, idx) => {
         if (tok.type !== "blank") return;
+
         const priorBlanks = blankIdxs.filter((i) => i < idx);
-        const prevBlank = priorBlanks.length ? Math.max(...priorBlanks) : -1;
         const laterBlanks = blankIdxs.filter((i) => i > idx);
+        const prevBlank = priorBlanks.length ? Math.max(...priorBlanks) : -1;
         const nextBlank = laterBlanks.length ? Math.min(...laterBlanks) : lineTokens.length;
-        const before = lineTokens
-          .slice(prevBlank + 1, idx)
-          .map((t) => (t.type === "text" ? t.text : "____"))
-          .join("");
-        const after = lineTokens
-          .slice(idx + 1, nextBlank)
-          .map((t) => (t.type === "text" ? t.text : "____"))
-          .join("");
+
+        const before = lineTokens.slice(prevBlank + 1, idx).map((t) => (t.type === "text" ? t.text : "")).join("");
+        const after = lineTokens.slice(idx + 1, nextBlank).map((t) => (t.type === "text" ? t.text : "")).join("");
 
         fields.push({
           id: `f${counter++}`,
@@ -122,6 +151,7 @@ async function extractBlankFields(buffer) {
           page: pageNum - 1,
           x: tok.x,
           y: tok.y,
+          heading: currentHeading,
           context: cleanLabel(lineText),
           question: buildQuestion(before, after),
           label: cleanLabel(before).slice(-40) || cleanLabel(after).slice(0, 40),
@@ -130,18 +160,14 @@ async function extractBlankFields(buffer) {
     }
   }
 
-  // A line that is *only* a blank (e.g. a wrapped continuation of the
-  // previous line's blank, often used for multi-line addresses) carries no
-  // useful context of its own. Link it to the previous "real" field so the
-  // chatbot doesn't ask a separate, contentless question, but still fill
-  // both spots with the same answer.
+  // Link blank-only continuation lines (< 3 letters in context) to the
+  // previous real field — same answer fills both positions.
   let lastReal = null;
   for (const f of fields) {
-    // Treat as "no useful context" if the line has fewer than 3 letters
-    // once blanks/punctuation are stripped (e.g. "____ ...." or "on ____ .").
     const isBlankOnly = f.context.replace(/[^A-Za-z]/g, "").length < 3;
     if (isBlankOnly && lastReal) {
       f.linkedTo = lastReal.id;
+      f.heading = lastReal.heading;
       f.context = lastReal.context;
       f.question = lastReal.question;
       f.label = lastReal.label;
@@ -178,7 +204,7 @@ function describeAcroField(field) {
   } else if (type === "radio" || type === "dropdown") {
     question = `${label}? Choose one of: ${(options || []).join(", ")}`;
   } else {
-    question = `Please provide a value for "${label}":`;
+    question = `Enter ${label}:`;
   }
 
   return { name, label, type, options, question };
@@ -194,6 +220,7 @@ async function extractAcroFields(pdfDoc) {
       type: desc.type,
       name: desc.name,
       label: desc.label,
+      heading: "",
       context: desc.label,
       question: desc.question,
       options: desc.options,
@@ -201,8 +228,6 @@ async function extractAcroFields(pdfDoc) {
   });
 }
 
-// Top-level entry point: load the PDF, decide whether it has AcroForm
-// fields, and return { mode, fields }.
 async function analyzePdf(buffer) {
   const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const form = pdfDoc.getForm();

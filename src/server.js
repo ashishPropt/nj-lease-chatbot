@@ -59,18 +59,26 @@ function buildMessage(session) {
   const f = fields[idx];
   const suggestion = getSuggestion(f, fields, session.answers);
 
+  // Build the chatbot message:
+  //   [HEADING]          ← section heading (e.g. "3. TERM") if present
+  //   [blank line]
+  //   [CONTEXT LINE]     ← full clause line with ____ showing where blank is
+  //   [blank line]
+  //   [QUESTION]         ← short question, no repetition of context
   let text = "";
-  if (f.context) text += f.context + "\n\n";
+  if (f.heading) text += `${f.heading}\n\n`;
+  if (f.context) text += `${f.context}\n\n`;
   text += f.question;
   if (suggestion) {
-    text += `\n\n(Based on your earlier answers, this looks like it should be ${suggestion}. Press enter / reply "yes" to accept, or type a different value.)`;
+    text += `\n\n(Suggested: ${suggestion} — press Enter or reply "yes" to accept, or type a different value.)`;
   }
 
   return {
     sessionId: session.id,
     done: false,
     fieldId: f.id,
-    section: f.label || f.name || "",
+    heading: f.heading || "",
+    section: f.heading || f.label || f.name || "",
     context: f.context,
     question: f.question,
     options: f.options || null,

@@ -10,6 +10,18 @@ const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 
 const BLANK_RE = /_{3,}/g;
 
+// German-specific characters and high-frequency German function words that
+// don't appear in English. If a line matches, it's treated as German and
+// its blanks are skipped (the English version of the same blank is used instead).
+const GERMAN_CHARS_RE = /[äöüÄÖÜß]/;
+const GERMAN_WORDS_RE = /\b(und|oder|der|die|das|für|mit|von|zu(?:r|m|s)?\b|ist|sind|nicht|auch|auf|des|dem|den|eine?\b|wird|beim?|nach|seit|sowie|über|durch|ans?|ins?|beim|vom|aus|als|bei|zur|zum|wenn|dass|nach|ihre?|sein|haben|werden|können|müssen|sollen|darf|hier)\b/gi;
+
+function isGerman(text) {
+  if (GERMAN_CHARS_RE.test(text)) return true;
+  const matches = text.match(GERMAN_WORDS_RE);
+  return matches && matches.length >= 2; // 2+ German words → likely German
+}
+
 // A section heading is a SHORT all-caps or numbered line with no blanks
 // and no lowercase (so long legal sentences are excluded).
 // e.g. "3. TERM", "2. PROPERTY", "PARTIES"
@@ -132,6 +144,10 @@ async function extractBlankFields(buffer) {
       const inlineMatch = cleanLabel(lineText).match(INLINE_HEADING_RE);
       if (inlineMatch) currentHeading = inlineMatch[1].trim();
 
+      // Skip German lines entirely — the same blank will appear on the English
+      // line too; we'll link them later so the English answer fills both spots.
+      const lineIsGerman = isGerman(cleanLabel(lineText));
+
       const blankIdxs = lineTokens.map((t, i) => (t.type === "blank" ? i : -1)).filter((i) => i >= 0);
 
       lineTokens.forEach((tok, idx) => {
@@ -155,23 +171,28 @@ async function extractBlankFields(buffer) {
           context: cleanLabel(lineText),
           question: buildQuestion(before, after),
           label: cleanLabel(before).slice(-40) || cleanLabel(after).slice(0, 40),
+          german: lineIsGerman,
         });
       });
     }
   }
 
-  // Link blank-only continuation lines (< 3 letters in context) to the
-  // previous real field — same answer fills both positions.
+  // Post-processing pass: link two kinds of "silent" fields to their nearest
+  // preceding real English field so the answer fills both spots without
+  // asking a duplicate question.
+  //   1. Blank-only continuation lines (< 3 letters of real context)
+  //   2. German-language lines (bilingual forms — English answer fills both)
   let lastReal = null;
   for (const f of fields) {
     const isBlankOnly = f.context.replace(/[^A-Za-z]/g, "").length < 3;
-    if (isBlankOnly && lastReal) {
+    const isSilent = isBlankOnly || f.german;
+    if (isSilent && lastReal) {
       f.linkedTo = lastReal.id;
       f.heading = lastReal.heading;
       f.context = lastReal.context;
       f.question = lastReal.question;
       f.label = lastReal.label;
-    } else if (!isBlankOnly) {
+    } else if (!isSilent) {
       lastReal = f;
     }
   }

@@ -5,6 +5,7 @@ const { randomUUID } = require("crypto");
 const { analyzePdf } = require("./pdfForm");
 const { fillPdf } = require("./pdfFiller");
 const { getSuggestion } = require("./autofill");
+const { parseFilledPdf } = require("./pdfParser");
 
 const app = express();
 app.use(express.json());
@@ -201,6 +202,29 @@ app.get("/api/sessions/:id/pdf", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to generate PDF" });
+  }
+});
+
+// Parse a filled PDF to extract questions + answers.
+// Accepts multipart fields:
+//   "filled"   — the already-filled PDF (required)
+//   "original" — the blank template PDF (optional but improves accuracy)
+//
+// Returns: { mode, fields: [{ heading, context, question, answer }] }
+app.post("/api/parse-filled", upload.fields([{ name: "filled" }, { name: "original" }]), async (req, res) => {
+  const filledFile = (req.files || {}).filled?.[0];
+  const originalFile = (req.files || {}).original?.[0];
+  if (!filledFile) return res.status(400).json({ error: "No 'filled' file uploaded" });
+
+  try {
+    const result = await parseFilledPdf(
+      filledFile.buffer,
+      originalFile ? originalFile.buffer : null
+    );
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to parse filled PDF" });
   }
 });
 

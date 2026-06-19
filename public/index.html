@@ -33,15 +33,32 @@
   #summary .save-btn { font-size: 11px; padding: 3px 8px; margin-left: 4px; }
   #confirm-btn { display: block; margin: 12px auto; padding: 10px 24px; font-size: 14px; border: none; background: #34a853; color: white; border-radius: 4px; cursor: pointer; }
   .error { color: #c00; margin-top: 8px; }
+  .tabs { display: flex; border-bottom: 2px solid #ddd; }
+  .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: #555; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; font-weight: 600; }
+  #parse-panel { padding: 20px; }
+  #parse-panel label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
+  #parse-panel input { margin-bottom: 12px; }
+  #parse-result { margin-top: 16px; }
+  #parse-result table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #parse-result th, #parse-result td { border: 1px solid #ddd; padding: 7px 10px; text-align: left; vertical-align: top; }
+  #parse-result th { background: #f0f2f5; width: 40%; }
+  #parse-result .heading-row td { background: #e8f0fe; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  #parse-result .no-answer { color: #999; font-style: italic; }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <h1>PDF Form Filling Chatbot</h1>
+    <h1>PDF Form Chatbot</h1>
     <div class="progress" id="progress"></div>
     <div class="session-id" id="session-id"></div>
   </header>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-fill" onclick="switchTab('fill')">Fill a Form</div>
+    <div class="tab" id="tab-parse" onclick="switchTab('parse')">Read a Filled Form</div>
+  </div>
 
   <div id="upload">
     <p>Upload a PDF form. The chatbot will ask one question per blank/field, then return the form filled in.</p>
@@ -49,6 +66,17 @@
     <br>
     <button id="upload-btn">Upload &amp; Start</button>
     <div class="error" id="upload-error"></div>
+  </div>
+
+  <div id="parse-panel" style="display:none">
+    <p>Upload a filled PDF to extract what was answered. Optionally provide the original blank form for better accuracy.</p>
+    <label>Filled PDF (required):</label>
+    <input type="file" id="filled-file" accept="application/pdf" /><br>
+    <label>Original blank form (optional — improves matching):</label>
+    <input type="file" id="original-file" accept="application/pdf" /><br>
+    <button id="parse-btn">Extract Answers</button>
+    <div class="error" id="parse-error"></div>
+    <div id="parse-result"></div>
   </div>
 
   <div id="chat" style="display:none"></div>
@@ -239,6 +267,109 @@ uploadBtn.addEventListener('click', async () => {
     uploadBtn.textContent = 'Upload & Start';
   }
 });
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+const parsePanel = document.getElementById('parse-panel');
+
+function switchTab(tab) {
+  document.getElementById('tab-fill').classList.toggle('active', tab === 'fill');
+  document.getElementById('tab-parse').classList.toggle('active', tab === 'parse');
+  uploadDiv.style.display  = tab === 'fill'  ? '' : 'none';
+  parsePanel.style.display = tab === 'parse' ? '' : 'none';
+  // hide chatbot panels when switching away
+  if (tab === 'parse') {
+    chat.style.display = 'none';
+    form.style.display = 'none';
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('download-link').style.display = 'none';
+  }
+}
+
+// ── Parse filled PDF ──────────────────────────────────────────────────────────
+document.getElementById('parse-btn').addEventListener('click', async () => {
+  const parseError  = document.getElementById('parse-error');
+  const parseResult = document.getElementById('parse-result');
+  const filledFile   = document.getElementById('filled-file').files[0];
+  const originalFile = document.getElementById('original-file').files[0];
+  parseError.textContent = '';
+  parseResult.innerHTML  = '';
+
+  if (!filledFile) { parseError.textContent = 'Please choose the filled PDF.'; return; }
+
+  const btn = document.getElementById('parse-btn');
+  btn.disabled = true;
+  btn.textContent = 'Extracting…';
+
+  try {
+    const fd = new FormData();
+    fd.append('filled', filledFile);
+    if (originalFile) fd.append('original', originalFile);
+
+    const res  = await fetch('/api/parse-filled', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Extraction failed');
+    if (data.error) throw new Error(data.error);
+
+    renderParseResult(data);
+  } catch (err) {
+    parseError.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Extract Answers';
+  }
+});
+
+function renderParseResult(data) {
+  const container = document.getElementById('parse-result');
+  const fields = data.fields || [];
+  if (!fields.length) {
+    container.innerHTML = '<p style="color:#999">No filled values could be detected.</p>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  let lastHeading = '';
+
+  fields.forEach((f) => {
+    // Insert a heading row when the section changes
+    if (f.heading && f.heading !== lastHeading) {
+      lastHeading = f.heading;
+      const hRow = document.createElement('tr');
+      hRow.className = 'heading-row';
+      const hCell = document.createElement('td');
+      hCell.colSpan = 2;
+      hCell.textContent = f.heading;
+      hRow.appendChild(hCell);
+      table.appendChild(hRow);
+    }
+
+    const tr = document.createElement('tr');
+
+    const th = document.createElement('th');
+    th.innerHTML = f.context
+      ? `<span style="font-size:11px;color:#555">${escHtml(f.context)}</span><br>${escHtml(f.question)}`
+      : escHtml(f.question || f.context || '—');
+    tr.appendChild(th);
+
+    const td = document.createElement('td');
+    td.textContent = f.answer || '';
+    if (!f.answer) td.className = 'no-answer';
+    tr.appendChild(td);
+
+    table.appendChild(tr);
+  });
+
+  const modeTag = document.createElement('p');
+  modeTag.style.cssText = 'font-size:11px;color:#999;margin-bottom:8px';
+  modeTag.textContent = `Detection mode: ${data.mode}`;
+
+  container.appendChild(modeTag);
+  container.appendChild(table);
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
 </body>
 </html>
